@@ -1,12 +1,12 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { put } from "@vercel/blob";
-import { requireRoles } from "@/lib/access";
 
 export const Route = createFileRoute("/api/upload")({
   server: {
     handlers: {
       POST: async ({ request }: { request: Request }) => {
         try {
+          const { requireRoles } = await import("@/lib/access.server");
           await requireRoles(["owner", "admin", "editor"]);
           const form = await request.formData();
           const file = form.get("file");

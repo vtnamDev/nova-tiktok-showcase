@@ -1,5 +1,5 @@
 import { createServerFn } from "@tanstack/react-start";
-import { and, desc, eq, gt, isNull, ne, sql } from "drizzle-orm";
+import { and, desc, eq, gt, isNull } from "drizzle-orm";
 import { createHash, randomBytes } from "node:crypto";
 import { z } from "zod";
 import {
@@ -12,7 +12,6 @@ import {
   user,
   userRole,
 } from "../../drizzle/schema";
-import { requireRoles } from "./access";
 import { getDb } from "./db";
 import { isSafeTikTokUrl, slugify } from "./validation";
 
@@ -40,6 +39,7 @@ const productInput = z.object({
 });
 
 export const getAdminData = createServerFn({ method: "GET" }).handler(async () => {
+  const { requireRoles } = await import("./access.server");
   const access = await requireRoles(["owner", "admin", "editor", "viewer"]);
   const db = getDb();
   const [products, categories] = await Promise.all([
@@ -84,6 +84,7 @@ export const getAdminData = createServerFn({ method: "GET" }).handler(async () =
 export const saveProduct = createServerFn({ method: "POST" })
   .inputValidator((input) => productInput.parse(input))
   .handler(async ({ data }) => {
+    const { requireRoles } = await import("./access.server");
     const access = await requireRoles(["owner", "admin", "editor"]);
     for (const url of [data.baseTiktokUrl, ...data.variants.map((variant) => variant.tiktokUrlOverride)]) {
       if (url && !isSafeTikTokUrl(url)) throw new Error("TikTok URL không hợp lệ.");
@@ -155,6 +156,7 @@ export const saveProduct = createServerFn({ method: "POST" })
 export const deleteProduct = createServerFn({ method: "POST" })
   .inputValidator((input) => z.object({ id: z.string().uuid() }).parse(input))
   .handler(async ({ data }) => {
+    const { requireRoles } = await import("./access.server");
     await requireRoles(["owner", "admin"]);
     await getDb().delete(product).where(eq(product.id, data.id));
     return { ok: true };
@@ -168,6 +170,7 @@ export const saveCategory = createServerFn({ method: "POST" })
     isActive: z.boolean().default(true),
   }).parse(input))
   .handler(async ({ data }) => {
+    const { requireRoles } = await import("./access.server");
     await requireRoles(["owner", "admin"]);
     const db = getDb();
     const values = { name: data.name, slug: slugify(data.name), description: data.description, isActive: data.isActive, updatedAt: new Date() };
@@ -182,6 +185,7 @@ export const saveCategory = createServerFn({ method: "POST" })
 export const deleteCategory = createServerFn({ method: "POST" })
   .inputValidator((input) => z.object({ id: z.string().uuid() }).parse(input))
   .handler(async ({ data }) => {
+    const { requireRoles } = await import("./access.server");
     await requireRoles(["owner", "admin"]);
     await getDb().delete(category).where(eq(category.id, data.id));
     return { ok: true };
@@ -193,6 +197,7 @@ export const createInvitation = createServerFn({ method: "POST" })
     role: z.enum(["admin", "editor", "viewer"]),
   }).parse(input))
   .handler(async ({ data }) => {
+    const { requireRoles } = await import("./access.server");
     const access = await requireRoles(["owner"]);
     const token = randomBytes(32).toString("base64url");
     const tokenHash = createHash("sha256").update(token).digest("hex");
@@ -215,6 +220,7 @@ export const updateMemberRole = createServerFn({ method: "POST" })
     role: z.enum(["owner", "admin", "editor", "viewer"]),
   }).parse(input))
   .handler(async ({ data }) => {
+    const { requireRoles } = await import("./access.server");
     const access = await requireRoles(["owner"]);
     const db = getDb();
     const [target] = await db.select().from(userRole).where(eq(userRole.userId, data.userId)).limit(1);
