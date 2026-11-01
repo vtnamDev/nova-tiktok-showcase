@@ -79,7 +79,7 @@ function AdminPage() {
         }
         added.push(payload.url);
       }
-      setImageUrls((current) => [...current.split("\\n").map((url) => url.trim()).filter(Boolean), ...added].join("\\n"));
+      setImageUrls((current) => [...current.split("\n").map((url) => url.trim()).filter(Boolean), ...added].join("\n"));
       toast.success(`Đã tải lên ${added.length} ảnh.`);
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Không thể tải ảnh lên.");
