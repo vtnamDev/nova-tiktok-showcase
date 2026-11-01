@@ -64,6 +64,30 @@ function AdminPage() {
     window.scrollTo({ top: 0, behavior: "smooth" });
   }
 
+  async function uploadImages(files: File[]) {
+    if (!files.length) return;
+    setBusy(true);
+    const added: string[] = [];
+    try {
+      for (const file of files) {
+        const form = new FormData();
+        form.append("file", file);
+        const response = await fetch("/api/upload", { method: "POST", body: form });
+        const payload = await response.json().catch(() => ({}));
+        if (!response.ok || typeof payload.url !== "string") {
+          throw new Error(typeof payload.error === "string" ? payload.error : "Không thể tải ảnh lên.");
+        }
+        added.push(payload.url);
+      }
+      setImageUrls((current) => [...current.split("\\n").map((url) => url.trim()).filter(Boolean), ...added].join("\\n"));
+      toast.success(`Đã tải lên ${added.length} ảnh.`);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Không thể tải ảnh lên.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
   async function submitProduct(event: FormEvent) {
     event.preventDefault();
     let variants: any[];
@@ -89,6 +113,34 @@ function AdminPage() {
       await saveCategoryFn({ data: { name: categoryName, description: "", isActive: true } });
       setCategoryName(""); toast.success("Đã tạo danh mục."); await router.invalidate();
     } catch { toast.error("Không thể tạo danh mục."); } finally { setBusy(false); }
+  }
+
+  async function renameCategory(item: any) {
+    const nextName = window.prompt("Tên danh mục", item.name)?.trim();
+    if (!nextName || nextName === item.name) return;
+    setBusy(true);
+    try {
+      await saveCategoryFn({ data: { id: item.id, name: nextName, description: item.description || "", isActive: item.isActive } });
+      toast.success("Đã cập nhật danh mục.");
+      await router.invalidate();
+    } catch {
+      toast.error("Không thể cập nhật danh mục.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function toggleCategory(item: any) {
+    setBusy(true);
+    try {
+      await saveCategoryFn({ data: { id: item.id, name: item.name, description: item.description || "", isActive: !item.isActive } });
+      toast.success(item.isActive ? "Đã ẩn danh mục." : "Đã hiển thị danh mục.");
+      await router.invalidate();
+    } catch {
+      toast.error("Không thể thay đổi trạng thái danh mục.");
+    } finally {
+      setBusy(false);
+    }
   }
 
   async function sendInvite(event: FormEvent) {
@@ -130,7 +182,12 @@ function AdminPage() {
               <label className="wide">Mô tả<textarea value={description} onChange={(e) => setDescription(e.target.value)} rows={3}/></label>
               <label>Trạng thái<select value={status} onChange={(e) => setStatus(e.target.value as any)}><option value="draft">Bản nháp</option><option value="published">Hiển thị công khai</option><option value="archived">Lưu trữ</option></select></label>
               <label className="check-label"><input type="checkbox" checked={featured} onChange={(e) => setFeatured(e.target.checked)}/> Sản phẩm nổi bật</label>
-              <label className="wide">Ảnh sản phẩm (mỗi URL một dòng)<textarea value={imageUrls} onChange={(e) => setImageUrls(e.target.value)} rows={2} placeholder="https://..."/></label>
+              <div className="wide">
+                <label>Ảnh sản phẩm (tải trực tiếp lên Vercel Blob)
+                  <input type="file" accept="image/jpeg,image/png,image/webp,image/avif" multiple disabled={busy} onChange={(e) => { void uploadImages(Array.from(e.currentTarget.files ?? [])); e.currentTarget.value = ""; }}/>
+                </label>
+              </div>
+              <label className="wide">URL ảnh bổ sung (mỗi URL một dòng)<textarea value={imageUrls} onChange={(e) => setImageUrls(e.target.value)} rows={2} placeholder="https://..."/></label>
               <label className="wide">Biến thể (JSON) — giá và TikTok URL riêng sẽ ghi đè giá/link gốc<textarea className="code-input" value={variantsJson} onChange={(e) => setVariantsJson(e.target.value)} rows={5}/></label>
               <div className="wide"><span className="field-caption">Danh mục — chọn nhiều danh mục</span><div className="category-checks">{initial.categories.map((c: any) => <label key={c.id} className="check-label"><input type="checkbox" checked={categoryIds.includes(c.id)} onChange={(e) => setCategoryIds((old) => e.target.checked ? [...old, c.id] : old.filter((id) => id !== c.id))}/>{c.name}</label>)}</div></div>
             </div>
@@ -149,7 +206,7 @@ function AdminPage() {
         {tab === "categories" && <div className="table-panel">
           <div className="panel-heading"><div><p className="eyebrow">TAXONOMY</p><h2>Quản lý danh mục</h2></div></div>
           {canManage && <form className="inline-form" onSubmit={addCategory}><input placeholder="Tên danh mục mới" value={categoryName} onChange={(e) => setCategoryName(e.target.value)} required maxLength={100}/><button className="button button-primary" disabled={busy}><Plus size={16}/> Thêm danh mục</button></form>}
-          <div className="category-admin-list">{initial.categories.map((c: any) => <div key={c.id}><span><strong>{c.name}</strong><small>{c.slug}</small></span><span className={c.isActive ? "status status-published" : "status status-draft"}>{c.isActive ? "active" : "hidden"}</span>{canManage && <button className="icon-button danger" onClick={async () => { if (confirm("Xóa danh mục này?")) { await deleteCategoryFn({data:{id:c.id}}); await router.invalidate(); } }}><Trash2 size={15}/></button>}</div>)}</div>
+          <div className="category-admin-list">{initial.categories.map((c: any) => <div key={c.id}><span><strong>{c.name}</strong><small>{c.slug}</small></span><span className={c.isActive ? "status status-published" : "status status-draft"}>{c.isActive ? "active" : "hidden"}</span>{canManage && <><button className="icon-button" disabled={busy} onClick={() => void renameCategory(c)}>Sửa</button><button className="icon-button" disabled={busy} onClick={() => void toggleCategory(c)}>{c.isActive ? "Ẩn" : "Hiện"}</button><button className="icon-button danger" disabled={busy} onClick={async () => { if (confirm("Xóa danh mục này?")) { await deleteCategoryFn({data:{id:c.id}}); await router.invalidate(); } }}><Trash2 size={15}/></button></>}</div>)}</div>
         </div>}
 
         {tab === "team" && <div className="table-panel">

@@ -1,5 +1,5 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { ArrowUpRight, Search, ShoppingBag, Sparkles, ShieldCheck, Truck } from "lucide-react";
 import { getPublicCatalog, trackCatalogEvent } from "@/lib/catalog.functions";
 import { formatVnd } from "@/lib/validation";
@@ -15,18 +15,29 @@ function Storefront() {
   const [activeCategory, setActiveCategory] = useState("all");
   const [selectedVariants, setSelectedVariants] = useState<Record<string, string>>({});
 
+  useEffect(() => {
+    if (!catalog.configured || !catalog.products.length) return;
+    for (const item of catalog.products) {
+      void trackCatalogEvent({ data: { productId: item.id, eventType: "view" } });
+    }
+  }, [catalog.configured, catalog.products]);
+
   const visible = useMemo(() => catalog.products.filter((item: any) => {
     const matchesQuery = (item.name + " " + item.description).toLowerCase().includes(query.toLowerCase());
     const matchesCategory = activeCategory === "all" || item.categories.some((c: any) => c?.id === activeCategory);
     return matchesQuery && matchesCategory;
   }), [catalog.products, query, activeCategory]);
 
-  const buy = async (item: any) => {
+  const buy = (item: any) => {
     const variant = item.variants.find((v: any) => v.id === selectedVariants[item.id]);
     const url = variant?.tiktokUrl || item.tiktokUrl;
     if (!url) return;
-    await trackCatalogEvent({ data: { productId: item.id, variantId: variant?.id, eventType: "tiktok_click" } });
+
+    // Open synchronously inside the user click to avoid popup blockers.
     window.open(url, "_blank", "noopener,noreferrer");
+    void trackCatalogEvent({
+      data: { productId: item.id, variantId: variant?.id, eventType: "tiktok_click" },
+    });
   };
 
   return (
