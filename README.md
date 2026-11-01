@@ -1,25 +1,23 @@
 # NOVA TikTok Showcase
 
-Storefront and lightweight CMS for a multi-category TikTok Shop catalog.
+Multi-category TikTok Shop catalog and admin CMS.
 
-## Architecture
+## Stack
+- TanStack Start + React + TypeScript
+- Vercel Functions (Nitro adapter)
+- Neon PostgreSQL + Drizzle ORM
+- Better Auth: username/password and Google OAuth
+- Vercel Blob for public product media
 
-- **Frontend + backend:** TanStack Start, React, TypeScript, deployed on Vercel.
-- **Runtime:** Nitro builds the TanStack Start server into Vercel Functions.
-- **Database:** Neon PostgreSQL using Drizzle ORM and Neon Serverless Pool.
-- **Authentication:** Better Auth (username/password + Google OAuth).
-- **Image storage:** Vercel Blob.
-- **Commerce:** The site does not collect payment. Each selected product/variant sends the customer to its TikTok Shop URL.
+Customers browse without accounts. The site does not take payments or provide a cart; the chosen product/variant sends the customer to TikTok Shop.
 
-## Local setup
-
-1. Copy `.env.example` to `.env`.
-2. Create a Neon PostgreSQL database and set `DATABASE_URL` to its pooled connection string.
-3. Set `BETTER_AUTH_SECRET` to a random value with at least 32 characters.
-4. Set `BETTER_AUTH_URL=http://localhost:3000`.
-5. Set `BOOTSTRAP_OWNER_EMAIL` to the email address that will become the first Owner.
-6. Optionally configure Google OAuth and Vercel Blob values.
-7. Install and start:
+## Local development
+1. Copy .env.example to .env.
+2. Set pooled Neon connection as DATABASE_URL and direct connection as DATABASE_URL_UNPOOLED (the direct variable is used by Drizzle migrations).
+3. Set BETTER_AUTH_SECRET to a random secret of at least 32 characters.
+4. Set BETTER_AUTH_URL=http://localhost:3000.
+5. Configure Google OAuth and the exact bootstrap email if you will create the first Owner.
+6. Run:
 
 ```bash
 npm install
@@ -27,58 +25,42 @@ npm run db:migrate
 npm run dev
 ```
 
-## Vercel setup
+## Vercel
+1. Connect the GitHub repository to the Vercel project.
+2. Connect a Neon Postgres resource to Preview and Production. Use Singapore region sin1 to keep the database near the app's Functions.
+3. Ensure these environment variables are present in Vercel: DATABASE_URL, DATABASE_URL_UNPOOLED, BETTER_AUTH_SECRET, BETTER_AUTH_URL, BOOTSTRAP_OWNER_EMAIL, GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, BLOB_READ_WRITE_TOKEN.
+4. The Vercel Blob store nova-product-media is created for this project. Its token is managed by Vercel; do not copy it into Git.
+5. Set the Google OAuth callback to https://YOUR_DOMAIN/api/auth/callback/google.
+6. After connecting Neon, redeploy the Preview. Apply npm run db:migrate using the direct connection string, then test sign-in, invitations, roles, products and TikTok redirects before production promotion.
 
-1. Import this repository into Vercel (the project is already linked to this repository).
-2. Add a Neon Postgres resource and ensure the project receives `DATABASE_URL`.
-3. Add environment variables in **Vercel → Project → Settings → Environment Variables**:
-   - `DATABASE_URL`
-   - `BETTER_AUTH_SECRET`
-   - `BETTER_AUTH_URL` (the final production origin)
-   - `BOOTSTRAP_OWNER_EMAIL`
-   - `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET`
-   - `BLOB_READ_WRITE_TOKEN`
-4. Create a Vercel Blob store and connect it to the project.
-5. Configure the Google OAuth callback URL as `https://YOUR_DOMAIN/api/auth/callback/google`.
-6. Deploy a Preview first, confirm sign-in and catalog reads, then promote to Production.
-
-Never prefix private values with `VITE_`. Never commit `.env` files.
+Never commit .env, database URLs, OAuth secrets or Blob tokens. Never expose secrets with a VITE_ prefix.
 
 ## First Owner bootstrap
-
-Only the exact email in `BOOTSTRAP_OWNER_EMAIL` can create the first account before an Owner exists. After that account signs in successfully, manually promote the verified account once in Neon SQL:
+The first account is restricted to BOOTSTRAP_OWNER_EMAIL and a Google OAuth identity whose provider reports a verified email. After that account signs in, manually assign Owner once in Neon SQL:
 
 ```sql
 INSERT INTO user_role (user_id, role)
 SELECT id, 'owner'::app_role
 FROM "user"
 WHERE lower(email) = lower('YOUR_VERIFIED_OWNER_EMAIL')
+  AND email_verified = true
 ON CONFLICT (user_id) DO UPDATE SET role = 'owner';
 ```
 
-After the first Owner exists, all new accounts require an unexpired invitation token created by an Owner. The Owner shares the one-time invitation URL with the intended email address. Invitation links expire after seven days.
+No public endpoint can promote an account. After an Owner exists, every new account must use an unexpired invitation created by an Owner. Invitation links expire after seven days.
 
 ## Roles
+- Owner: full access; invites members and assigns roles.
+- Admin: manages products, categories, variants and media.
+- Editor: creates and edits product content.
+- Viewer: read-only access.
 
-- **Owner:** full access, team invitations and role assignment.
-- **Admin:** manage products, categories, variants and images.
-- **Editor:** create and edit products.
-- **Viewer:** read-only access.
+Authorization is checked in server functions, not only by hiding UI controls.
 
-Permissions are checked in server functions. UI visibility is not an authorization boundary.
-
-## Product model
-
-- Products can belong to multiple categories.
-- Each product has a base price and base TikTok URL.
-- Variants can override the base price and/or TikTok URL; empty override values inherit from the parent product.
-- Product images are stored as media records; upload endpoint uses Vercel Blob.
-- Only products with status `published` are returned by the public catalog.
-
-## Migrations
-
-SQL migrations live in `drizzle/migrations`. Apply them with `npm run db:migrate`. Use `npm run db:generate` after changing the Drizzle schema.
-
-## Important migration note
-
-This upgrade replaces the old Supabase/Lovable Cloud authentication and data path. No Supabase credentials or service-role keys are required by this codebase.
+## Catalog model
+- Categories are dynamic and managed by Owner/Admin.
+- A product can belong to multiple categories.
+- Each product has a base price and TikTok URL.
+- Variants can override price or TikTok URL; a null override inherits from the parent product.
+- Only published products and active categories are shown publicly.
+- Product views and TikTok outbound clicks are counted without storing visitor identities.

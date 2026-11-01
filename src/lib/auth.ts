@@ -30,7 +30,7 @@ export function getAuth() {
     appName: "Nova Store",
     secret,
     baseURL: process.env.BETTER_AUTH_URL ||
-      (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : "http://localhost:3000"),
+      (process.env.VERCEL_URL ? "https://" + process.env.VERCEL_URL : "http://localhost:3000"),
     trustedOrigins: [
       "http://localhost:3000",
       ...(process.env.BETTER_AUTH_URL ? [process.env.BETTER_AUTH_URL] : []),
@@ -80,19 +80,23 @@ export function getAuth() {
       user: {
         create: {
           before: async (newUser) => {
-            const ownerExists = await db.select({ id: userRole.userId })
+            const owners = await db.select({ id: userRole.userId })
               .from(userRole).where(eq(userRole.role, "owner")).limit(1);
             const email = newUser.email.trim().toLowerCase();
 
-            // The first account is restricted to the exact bootstrap email.
-            // Promote that verified identity to Owner once through Neon SQL.
-            if (ownerExists.length === 0 && bootstrapEmail && email === bootstrapEmail) {
+            // The first account can only be bootstrapped by a trusted Google identity
+            // whose provider has confirmed the email address.
+            if (owners.length === 0 && bootstrapEmail && email === bootstrapEmail && newUser.emailVerified) {
               return { data: { ...newUser, inviteToken: null } };
             }
 
             const token = (newUser as typeof newUser & { inviteToken?: string }).inviteToken;
             if (!token) {
-              throw new APIError("FORBIDDEN", { message: "Tài khoản chỉ được tạo bằng lời mời hợp lệ." });
+              throw new APIError("FORBIDDEN", {
+                message: owners.length === 0
+                  ? "Tài khoản Owner đầu tiên phải đăng nhập Google bằng email đã xác minh được cấu hình."
+                  : "Tài khoản chỉ được tạo bằng lời mời hợp lệ của Owner.",
+              });
             }
 
             const [validInvite] = await db.select({ id: invitation.id })
